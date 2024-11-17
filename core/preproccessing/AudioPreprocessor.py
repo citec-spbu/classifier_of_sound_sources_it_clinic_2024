@@ -7,12 +7,13 @@ import numpy as np
 import noisereduce as nr
 from scipy.signal import butter, lfilter
 import matplotlib.pyplot as plt
+import soundfile as sf
 
 
 class AudioPreprocessor:
     def __init__(self,
-                 sr=None,
                  audio=None,
+                 sr=None,
                  offset=0.0,
                  duration=None):
         """
@@ -20,10 +21,10 @@ class AudioPreprocessor:
         
         Parameters:
         ----------
-        sr: int
-            sampling rate, default = None
         audio: np.ndarray 
             Временной ряд аудиосигнала, default = None
+        sr: int
+            sampling rate, default = None
         offset: float
             Сдвиг (с какой секунды начинаем аудио), default = 0.0
         duration: float
@@ -48,30 +49,39 @@ class AudioPreprocessor:
  
     def return_audio(self):
         """
-        Вернуть аудио (например, для просмотра его состояния после преобразований)
+        Вернуть аудио (временной ряд и sampling rate)
         """
-        return self.audio
+        return (self.audio, self.sr)
+    
+    def save_audio(self, output_path):
+        """
+        Сохраняет аудиосигнал в файл.
+
+        Parameters
+        ----------
+        output_path: str
+            Путь для сохранения файла.
+        """
+        sf.write(output_path, self.audio, self.sr)
 
     # обработка аудио
     def detect_noise_section(self, method='amplitude', threshold=0.02, noise_duration=0.5):
         """
         Определяет сегмент шума в аудио различными методами.
 
-        Parameters:
+        Parameters
         ----------
         method: str
             Метод обнаружения шума: 'amplitude', 'frequency', 'silence'.
             default = amplitude
-
         threshold: float
             Порог для обнаружения шума. Используется по-разному в зависимости от метода.
             default = 0.02
-
         noise_duration: float
             Длина фрагмента шума в секундах.
             default = 0.5
 
-        Возвращает:
+        Return
         ----------
         (start, end): кортеж
             Временной интервал в секундах, где обнаружен шум.
@@ -141,7 +151,7 @@ class AudioPreprocessor:
 
         return (0, noise_duration)
 
-    def remove_noise(self, noise_start=None, noise_end=None):
+    def remove_noise(self, noise_start=None, noise_end=None, inplace=False):
         """
         Удаление шума
 
@@ -150,21 +160,27 @@ class AudioPreprocessor:
         noise_start: float
             Начальный момент времени в секундах для захвата примера шума,
             default = None
-        
         noise_end: float
             Конечный момент времени в секундах для захвата примера шума,
-            default = None
+            default = None     
+        inplace: bool
+            Преобразовываем ли текущий объект self.audio, 
+            default = False
         """
         if noise_start and noise_end:
             noise_sample = self.audio[int(noise_start * self.sr):int(noise_end * self.sr)]
-            self.audio = nr.reduce_noise(y=self.audio,
-                                         sr=self.sr,
-                                         y_noise=noise_sample)
+            ts = nr.reduce_noise(y=self.audio,
+                                 sr=self.sr,
+                                 y_noise=noise_sample)
         else:
-            self.audio = nr.reduce_noise(y=self.audio,
-                                         sr=self.sr)
+            ts = nr.reduce_noise(y=self.audio,
+                                 sr=self.sr)
+        if inplace:
+            self.audio = ts
         
-    def preemphasis(self, coef=0.97):
+        return AudioPreprocessor(audio=ts, sr=self.sr)
+        
+    def preemphasis(self, coef=0.97, inplace=False):
         """
         Метод преэмфазиса. Увеличивает амплитуду высокочастотных компонент сигнала, уменьшая влияние низкочастотного шума 
         и улучшая общее качество сигнала для последующей обработки
@@ -173,10 +189,17 @@ class AudioPreprocessor:
         -----------
         coef: float
             Коэффиент преэмфазиса. Обычно близок к 1.
+        inplace: bool
+            Преобразовываем ли текущий объект self.audio, default = False
         """
-        self.audio = librosa.effects.preemphasis(self.audio, coef=coef)
+        ts = librosa.effects.preemphasis(y=self.audio, coef=coef)
+        
+        if inplace:
+            self.audio = ts
+        
+        return AudioPreprocessor(audio=ts, sr=self.sr)
 
-    def normalize(self, method="peak", coef=0.1):
+    def normalize(self, method="peak", coef=0.1, inplace=False):
         """
         Нормализация сигнала
         
@@ -186,40 +209,93 @@ class AudioPreprocessor:
             Метод масштабирования сигнала: "peak", "rms"
         coef: float
             Коэффициент для масштабирования при использовании "rms"
+        inplace: bool
+            Преобразовываем ли текущий объект self.audio, default = False
         """
         if method == "peak":
-            self.audio = self.audio / np.max(np.abs(self.audio))
+            ts = self.audio / np.max(np.abs(self.audio))
         elif method == "rms":
-            self.audio = self.audio * (coef / np.sqrt(np.mean(self.audio**2)))
+            ts = self.audio * (coef / np.sqrt(np.mean(self.audio**2)))
         else:
             raise ValueError("Неправильный метод. Используйте 'peak' или 'rms'")
+
+        if inplace:
+            self.audio = ts         
+
+        return AudioPreprocessor(audio=ts, sr=self.sr)
     
-    def equalize(self, lowcut, highcut, order=5):
+    def _auto_select_equalize_params(self): 
+        """
+        Автоматический подбор параметров для эквализации 
+        на основе преобразования фурье и анализа частот
+        """
+        # STFT для анализа частотный компонент 
+        S = np.abs(librosa.stft(self.audio))
+        
+        # Средний спектральный уровень
+        avg_spectrum = np.mean(S, axis=1) 
+        frequencies = librosa.fft_frequencies(sr=self.sr) 
+        
+        # Частотные полосы с высоким содержанием энергии 
+        threshold = np.median(avg_spectrum) 
+        
+        # Диапазоны частот для фильтрации 
+        high_energy_indices = np.where(avg_spectrum > threshold)[0] 
+        lowcut = frequencies[high_energy_indices[0]] 
+        highcut = frequencies[high_energy_indices[-1]] 
+
+        # Выполнение проверок
+        if lowcut <= 0:
+            lowcut = frequencies[1]
+        if highcut >= 0.5 * self.sr:
+            highcut = 0.5 * self.sr - frequencies[1]
+
+        return lowcut, highcut
+    
+    def equalize(self, lowcut=None, highcut=None, order=5, inplace=False):
         """
         Эквализация с помощью фильтра Бабичава-Баттерворта.
 
         Параметры:
         ----------
         lowcut: float
-            Нижняя граница частоты для фильтрации.
-        
+            Нижняя граница частоты для фильтрации, default = None
         highcut: float
-            Верхняя граница частоты для фильтрации.
-        
+            Верхняя граница частоты для фильтрации, default = None
         order: int
             Порядок фильтра, определяет "резкость" фильтра.
+        inplace: bool
+            Преобразовываем ли текущий объект self.audio, default = False
         """
+        if (lowcut is None) or (highcut is None): 
+            lowcut, highcut = self._auto_select_equalize_params()
         nyquist = 0.5 * self.sr
         low = lowcut / nyquist
         high = highcut / nyquist
         b, a = butter(order, [low, high], btype='band')
-        self.audio = lfilter(b, a, self.audio)
+        ts = lfilter(b, a, self.audio)
 
-    def trim(self):
+        if inplace:
+            self.audio = ts
+        
+        return AudioPreprocessor(audio=ts, sr=self.sr)
+
+    def trim(self, inplace=False):
         """
         Обрезает тишину в начале и конце аудиосигнала.
+
+        Parameters
+        ----------
+        inplace: bool
+            Преобразовываем ли текущий объект self.audio, 
+            default = False
         """
-        self.audio, _ = librosa.effects.trim(self.audio)
+        ts, _ = librosa.effects.trim(self.audio)
+        
+        if inplace:
+            self.audio = ts
+        
+        return AudioPreprocessor(audio=ts, sr=self.sr)
 
     def windowing(self, window_length=1024, hop_size=512):
         """
