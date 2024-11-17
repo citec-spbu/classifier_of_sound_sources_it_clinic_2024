@@ -1,6 +1,5 @@
 """
-Класс, реализующий различные методы предобработки аудиосигналов, 
-а также комбинацию различных методов
+Класс, реализующий различные методы предобработки аудиосигналов
 """
 import librosa
 import librosa.display
@@ -262,13 +261,3 @@ class AudioPreprocessor:
         plt.colorbar(format="%+2.0f dB")
         plt.title('Spectrogram')
         plt.show()
-
-
-
-# Пример использования
-audio_file_path = 'path_to_audio_file.wav'
-processor = AudioPreprocessor()
-processor.load_audio(audio_file_path)
-processor.process_pipeline(['remove_noise', 'normalize'])
-processor.display_waveform()
-processor.display_spectrogram()
