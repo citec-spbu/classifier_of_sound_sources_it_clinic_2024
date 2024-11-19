@@ -361,3 +361,73 @@ class AudioPreprocessor:
         plt.show()
 
     # пайплайны обработки
+    def preprocessing_custom_pipeline(self, methods):
+        for method in methods:
+            if hasattr(self, method):
+                getattr(self, method)()
+    
+    def preprocessing_auto_pipeline(self, environment: str = None):
+        """
+        Пайплайн предобраотки данных в зависимости от характеристик среды
+        
+        Parameters
+        ----------
+        environment: str
+            Одна из заданных сред: 'city', 'mall', 'forest', 'highway'
+            Если не задано, то выбирается автоматически на основе характиристик аудиосигнала
+        """
+        if environment is None:
+            environment = self._analyze_environment()
+        
+        if environment == 'forest':
+            self._forest_preprocessing_pipeline()
+        elif environment == 'mall':
+            self._mall_preprocessing_pipeline()
+        elif environment == 'city':
+            self._city_preprocessing_pipeline()
+        elif environment == 'highway':
+            self._highway_preprocessing_pipeline()
+        else:
+            raise ValueError()
+
+
+
+    def _analyze_environment(self):
+        """ 
+        Анализ аудио для определения характеристик среды
+        """ 
+        # Пример анализа: анализ уровня шума и ZCR 
+        avg_energy = np.mean(np.square(self.audio)) 
+        zcr_value = np.mean(self.zcr()) 
+        
+        # Большая энергия и ZCR -> город 
+        # Средняя энергия и низкий ZCR -> лес
+        # Средняя энергия и средний ZCR -> торговый центр 
+        
+
+    def _forest_preprocessing_pipeline(self):
+        """
+        Пайплайн обработки данных в случае, когда среда похожа на лес
+        """
+        pass
+    
+    def _highway_preprocessing_pipeline(self):
+        """
+        Пайплайн обработки данных в случае, когда среда похожа на трассу
+        """
+        pass
+
+    def _mall_preprocessing_pipeline(self):
+        """
+        Пайплайн обработки данных в случае, когда среда похожа на торговый центр
+        """
+        pass
+
+    def _city_preprocessing_pipeline(self):
+        """
+        Пайплайн обработки данных в случае, когда среда похожа на город
+        """
+        pass
+
+
+print(f"Predicted class: {predicted_class}")
