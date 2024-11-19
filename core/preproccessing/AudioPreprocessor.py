@@ -34,6 +34,7 @@ class AudioPreprocessor:
         self.audio = audio
         self.offset = offset
         self.duration = duration
+        self.mfcc = None
 
     def load_audio(self, file_path: str):
         """
@@ -313,14 +314,35 @@ class AudioPreprocessor:
         windows = librosa.util.frame(self.audio, frame_length=window_length, hop_length=hop_size)
         windowed_data = windows * window_function[:, np.newaxis]
         return windowed_data
-
-    def preprocessing_pipeline(self, methods):
-        for method in methods:
-            if hasattr(self, method):
-                getattr(self, method)()
     
     # features
+    def mfcc(self, n_mfcc=20):
+        """
+        Вычисление Mel-frequency cepstral coefficients.
 
+        Parameters
+        ----------
+        n_mfcc: int
+            Количество коэффициентов. Можно варьировать для "скармливания" модели
+        """
+        return librosa.feature.mfcc(y=self.audio,
+                                    sr=self.sr,
+                                    n_mfcc=n_mfcc)
+    
+    def zcr(self):
+        """
+        Вычисление числа пересечений нуля. 
+        Для анализа насыщенных сигналов и шумов.
+        """
+        return librosa.feature.zero_crossing_rate(y=self.audio)
+    
+    def chroma(self):
+        """
+        Вычисление распределении энергии в 12-полутоновой шкале. 
+        Для музыкального анализа.
+        """
+        return librosa.feature.chroma_stft(y=self.audio,
+                                           sr=self.sr)
 
     # визуализация
     def display_waveform(self):
@@ -337,3 +359,5 @@ class AudioPreprocessor:
         plt.colorbar(format="%+2.0f dB")
         plt.title('Spectrogram')
         plt.show()
+
+    # пайплайны обработки
