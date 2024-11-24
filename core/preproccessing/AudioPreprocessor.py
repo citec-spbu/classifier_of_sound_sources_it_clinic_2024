@@ -380,54 +380,71 @@ class AudioPreprocessor:
             environment = self._analyze_environment()
         
         if environment == 'forest':
-            self._forest_preprocessing_pipeline()
+            return self._forest_preprocessing_pipeline()
         elif environment == 'mall':
-            self._mall_preprocessing_pipeline()
+            return self._mall_preprocessing_pipeline()
         elif environment == 'city':
-            self._city_preprocessing_pipeline()
+            return self._city_preprocessing_pipeline()
         elif environment == 'highway':
-            self._highway_preprocessing_pipeline()
+            return self._highway_preprocessing_pipeline()
         else:
             raise ValueError()
 
-
-
     def _analyze_environment(self):
         """ 
-        Анализ аудио для определения характеристик среды
+        Анализ аудио для определения характеристик среды. 
+        Возвращает вероятную среду: 'city', 'mall', 'forest', 'highway'
         """ 
         # Пример анализа: анализ уровня шума и ZCR 
         avg_energy = np.mean(np.square(self.audio)) 
-        zcr_value = np.mean(self.zcr()) 
+        zcr_value = np.mean(self.zcr())
+        freqs = np.abs(librosa.stft(self.audio))
+        avg_spectrum = np.mean(freqs, axis=1)
+        dominant_freq = np.argmax(avg_spectrum)
         
-        # Большая энергия и ZCR -> город 
-        # Средняя энергия и низкий ZCR -> лес
-        # Средняя энергия и средний ZCR -> торговый центр 
+        # Большая энергия и много пересечений нуля (ZCR) -> город 
+        if (avg_energy > 0.02) and (zcr_value > 0.1):
+            return "city"
+        # Стабильно низкочастотный фон и средняя энергия -> трасса
+        elif (avg_energy > 0.015) and (dominant_freq < 300):
+            return "highway"
+        # Низкия энергия, низкое число пересечений нуля
+        elif (avg_energy < 0.005) and (zcr_value < 0.05):
+            return "forest"
+        else:
+            # Средняя энергия, средний ZCR, преобладание средних частот
+            return "mall"
         
-
     def _forest_preprocessing_pipeline(self):
         """
         Пайплайн обработки данных в случае, когда среда похожа на лес
         """
-        pass
+        return self.normalize(method="rms")
     
     def _highway_preprocessing_pipeline(self):
         """
         Пайплайн обработки данных в случае, когда среда похожа на трассу
         """
-        pass
+        new_audio = self.remove_noise()
+        new_audio.equalize(inplace=True)
+        
+        return new_audio
 
     def _mall_preprocessing_pipeline(self):
         """
         Пайплайн обработки данных в случае, когда среда похожа на торговый центр
         """
-        pass
+        new_audio = self.trim()
+        new_audio.remove_noise(inplace=True)
+        
+        return new_audio
 
     def _city_preprocessing_pipeline(self):
         """
         Пайплайн обработки данных в случае, когда среда похожа на город
         """
-        pass
-
-
-print(f"Predicted class: {predicted_class}")
+        new_audio = self.trim()
+        new_audio.preemphasis(inplace=True)
+        new_audio.remove_noise(inplace=True)
+        
+        return new_audio
